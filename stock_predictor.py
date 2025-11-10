@@ -1,6 +1,7 @@
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import pickle
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, Dense, Dropout, LayerNormalization, MultiHeadAttention, GlobalAveragePooling1D
@@ -15,18 +16,25 @@ END_DATE = "2024-01-01"
 LOOKBACK_WINDOW = 60  # Number of past days to look at (sequence length)
 FORECAST_HORIZON = 1  # Number of future days to predict
 TEST_SIZE = 0.2
-EPOCHS = 20
+EPOCHS = 50  # Increased epochs for better convergence
 BATCH_SIZE = 32
+MODEL_PATH = "stock_predictor_model.keras"
+SCALER_PATH = "stock_predictor_scaler.pkl"
 
 # --- 1. Data Fetching ---
 def fetch_data(ticker, start, end):
     """Fetches historical stock data using yfinance."""
     print(f"Fetching data for {ticker} from {start} to {end}...")
+    # Use Open, High, Low, Close, and Volume (multivariate data)
     data = yf.download(ticker, start=start, end=end)
     if data.empty:
         raise ValueError(f"Could not fetch data for {ticker}. Check the ticker and date range.")
-    # We will use the 'Close' price for prediction
-    return data[['Close']]
+    
+    # Select features: Open, High, Low, Close, Volume
+    features = ['Open', 'High', 'Low', 'Close', 'Volume']
+    data = data[features]
+    
+    return data
 
 # --- 2. Data Preprocessing ---
 def prepare_data(data, lookback, horizon):
@@ -40,17 +48,13 @@ def prepare_data(data, lookback, horizon):
     
     # Create sequences
     for i in range(lookback, len(scaled_data) - horizon + 1):
-        # X is the sequence of 'lookback' days
-        X.append(scaled_data[i-lookback:i, 0])
-        # y is the price of the day 'horizon' days in the future
-        y.append(scaled_data[i + horizon - 1, 0])
+        # X is the sequence of 'lookback' days (all features)
+        X.append(scaled_data[i-lookback:i, :])
+        # y is the 'Close' price of the day 'horizon' days in the future (index 3 is 'Close')
+        y.append(scaled_data[i + horizon - 1, 3])
         
     X = np.array(X)
     y = np.array(y)
-    
-    # Reshape X for the Transformer/DNN model: (samples, timesteps, features)
-    # Since we only have one feature ('Close'), the shape is (samples, lookback, 1)
-    X = np.reshape(X, (X.shape[0], X.shape[1], 1))
     
     # Split into training and testing sets
     split_index = int(len(X) * (1 - TEST_SIZE))
@@ -85,12 +89,12 @@ def transformer_block(inputs, head_size, num_heads, ff_dim, dropout=0):
 def build_model(input_shape):
     """Builds the combined Transformer and Deep Neural Network model."""
     
-    # Transformer Hyperparameters
-    head_size = 128
-    num_heads = 4
+    # Transformer Hyperparameters (Increased capacity)
+    head_size = 256
+    num_heads = 8
     ff_dim = 4
-    num_transformer_blocks = 2
-    dropout = 0.1
+    num_transformer_blocks = 4
+    dropout = 0.2
     
     inputs = Input(shape=input_shape)
     x = inputs
@@ -100,12 +104,13 @@ def build_model(input_shape):
         x = transformer_block(x, head_size, num_heads, ff_dim, dropout)
         
     # Global Average Pooling to flatten the sequence output
-    x = GlobalAveragePooling1D(data_format="channels_first")(x)
+    x = GlobalAveragePooling1D(data_format="channels_last")(x) # channels_last for (batch, steps, features)
     
-    # Deep Neural Network (DNN) layers for final prediction
+    # Deep Neural Network (DNN) layers for final prediction (Increased capacity)
+    x = Dense(128, activation="relu")(x)
+    x = Dropout(0.3)(x)
     x = Dense(64, activation="relu")(x)
-    x = Dropout(0.2)(x)
-    x = Dense(32, activation="relu")(x)
+    x = Dropout(0.3)(x)
     
     # Output layer for a single price prediction
     outputs = Dense(1, activation="linear")(x)
@@ -127,7 +132,7 @@ def train_and_evaluate(model, X_train, X_test, y_train, y_test, scaler):
     
     # Define callbacks
     callbacks = [
-        EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+        EarlyStopping(monitor='val_loss', patience=15, restore_best_weights=True)
     ]
     
     print("\n--- Starting Model Training ---")
@@ -151,9 +156,15 @@ def train_and_evaluate(model, X_train, X_test, y_train, y_test, scaler):
     predicted_scaled = model.predict(X_test)
     
     # Inverse transform to get actual prices
-    # We need to reshape the prediction to be 2D for the scaler
-    predicted_prices = scaler.inverse_transform(predicted_scaled)
-    actual_prices = scaler.inverse_transform(y_test.reshape(-1, 1))
+    # To inverse transform the 'Close' price (index 3), we need to create a dummy array
+    # with the correct number of features (5) and fill the 'Close' column.
+    dummy_array = np.zeros((len(predicted_scaled), scaler.n_features_in_))
+    dummy_array[:, 3] = predicted_scaled.flatten()
+    predicted_prices = scaler.inverse_transform(dummy_array)[:, 3]
+    
+    dummy_array_actual = np.zeros((len(y_test), scaler.n_features_in_))
+    dummy_array_actual[:, 3] = y_test.flatten()
+    actual_prices = scaler.inverse_transform(dummy_array_actual)[:, 3]
     
     # Calculate final error on actual prices
     final_mae = np.mean(np.abs(predicted_prices - actual_prices))
@@ -163,14 +174,22 @@ def train_and_evaluate(model, X_train, X_test, y_train, y_test, scaler):
     plt.figure(figsize=(14, 7))
     plt.plot(actual_prices, label='Actual Price', color='blue')
     plt.plot(predicted_prices, label='Predicted Price', color='red', linestyle='--')
-    plt.title(f'{TICKER} Stock Price Prediction (Transformer + DNN)')
+    plt.title(f'{TICKER} Stock Price Prediction (Transformer + DNN) - Enhanced')
     plt.xlabel('Time (Test Data Index)')
     plt.ylabel('Price (USD)')
     plt.legend()
-    plt.savefig('stock_prediction_results.png')
-    print("Prediction plot saved to 'stock_prediction_results.png'")
+    plt.savefig('stock_prediction_results_enhanced.png')
+    print("Prediction plot saved to 'stock_prediction_results_enhanced.png'")
     
-    return history
+    # Save the model and scaler for "real-time" prediction
+    model.save(MODEL_PATH)
+    print(f"Model saved to {MODEL_PATH}")
+    
+    with open(SCALER_PATH, 'wb') as f:
+        pickle.dump(scaler, f)
+    print(f"Scaler saved to {SCALER_PATH}")
+    
+    return final_mae
 
 # --- Main Execution ---
 if __name__ == "__main__":

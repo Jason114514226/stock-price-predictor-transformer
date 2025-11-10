@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ ticker }} Stock Prediction Dashboard</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f9;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .dashboard-container {
+            background-color: #ffffff;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            max-width: 600px;
+            width: 100%;
+        }
+        h1 {
+            color: #007bff;
+            margin-bottom: 30px;
+            font-size: 1.8em;
+        }
+        .prediction-box {
+            border: 2px solid #007bff;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            background-color: #e6f2ff;
+        }
+        .label {
+            font-size: 1.1em;
+            color: #555;
+            margin-bottom: 5px;
+        }
+        .price {
+            font-size: 3em;
+            font-weight: bold;
+            color: #28a745; /* Green for positive outlook */
+        }
+        .error {
+            color: #dc3545;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 20px;
+            text-align: left;
+        }
+        .info {
+            font-size: 0.9em;
+            color: #777;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <h1>{{ ticker }} Stock Price Prediction</h1>
+        
+        {% if error %}
+            <div class="error">
+                <strong>Error:</strong> {{ error }}
+            </div>
+        {% else %}
+            <div class="prediction-box">
+                <div class="label">Predicted Closing Price for Next Trading Day</div>
+                <div class="price">${{ prediction }}</div>
+            </div>
+            <div class="info">
+                <p>Model: Transformer + Deep Neural Network (Trained on Open, High, Low, Close, Volume)</p>
+                <p>Prediction generated at: {{ moment }}</p>
+            </div>
+        {% endif %}
+    </div>
+</body>
+</html>

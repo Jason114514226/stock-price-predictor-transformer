@@ -1,0 +1,20 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+
+# Virtual environment
+venv/
+.venv/
+
+# Dependencies
+.ipynb_checkpoints
+/lib/
+/dist/
+/build/
+
+# Logs and data
+*.log
+*.csv
+*.xlsx
